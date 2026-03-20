@@ -11,6 +11,7 @@ src/
  |   |── 🖥️ Renderer
  |   |── 🎨 Shader
  |   |── 🪟 Window
+ |   |── Texture
  |── 🚗 entities/
  |   |── 🚘 Car
  |   |── 🎫 Ticket
@@ -85,7 +86,8 @@ public class Camera {
 ```java
 package engine;
 
-// import game.Game; // Zakładamy, że ta klasa powstanie wkrótce
+import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL11.*;
 
 public class GameLoop {
     private Window window;
@@ -100,13 +102,16 @@ public class GameLoop {
     public void start() {
         window.init();
         isRunning = true;
+
+        // Inicjalizacja logiki gry
         game = new game.Game();
+
         loop();
         cleanup();
     }
 
     private void loop() {
-        // Zmienne do śledzenia czasu (Delta Time)
+        // Zmienne do śledzenia czasu (Delta Time dla płynności 60 FPS)
         long lastTime = System.nanoTime();
         double targetFPS = 60.0;
         double nsPerFrame = 1000000000.0 / targetFPS;
@@ -117,7 +122,7 @@ public class GameLoop {
             delta += (now - lastTime) / nsPerFrame;
             lastTime = now;
 
-            // Aktualizacja logiki gry (np. uciekający czas biletów, ruch kamery)
+            // Aktualizacja logiki gry (stały krok czasowy)
             while (delta >= 1) {
                 update();
                 delta--;
@@ -126,41 +131,42 @@ public class GameLoop {
             // Renderowanie (rysowanie na ekranie)
             render();
 
-            // Aktualizacja okna (zamiana buforów)
+            // Zamiana buforów i obsługa zdarzeń okna
             window.update();
         }
     }
 
     private void update() {
-        if (Input.isKeyDown(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE)) {
-            org.lwjgl.glfw.GLFW.glfwSetWindowShouldClose(window.getWindowHandle(), true);
+        // Zamknięcie gry klawiszem ESC
+        if (Input.isKeyDown(GLFW_KEY_ESCAPE)) {
+            glfwSetWindowShouldClose(window.getWindowHandle(), true);
         }
 
+        // Aktualizacja pozycji gracza, kamery i sprawdzanie biletów
         game.update();
 
-        // WYŚWIETLANIE STATUSU W TYTULE OKNA
+        // AKTUALIZACJA TYTUŁU OKNA - POBIERANIE DANYCH Z KLASY GAME
+        // To jest Twój "awaryjny HUD", dopóki nie wgramy czcionek do niebieskiego pola
         String status = "CWL Simulator | Punkty: " + game.getScore() +
                 " | Mandaty: " + game.getFinesIssued() +
                 " | " + game.getUiMessage();
 
-        org.lwjgl.glfw.GLFW.glfwSetWindowTitle(window.getWindowHandle(), status);
+        glfwSetWindowTitle(window.getWindowHandle(), status);
     }
 
     private void render() {
-        // Czyszczenie ekranu przed narysowaniem nowej klatki
-        org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT);
+        // Czyszczenie ekranu przed narysowaniem nowej klatki (Kolor tła i Głębia)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // Wywołanie rysowania całego świata gry (Auta, Lidl, Podłoga, HUD)
         if (game != null) {
             game.render();
         }
-        // Tutaj w przyszłości będziemy rysować modele (Game.render())
-        // np. game.render();
     }
 
     private void cleanup() {
         window.cleanup();
     }
-
 }
 ```
 
@@ -276,26 +282,36 @@ import java.util.List;
 
 public class Renderer {
     private Shader shader;
-    private int vaoId; // ID dla prostokątów (podłoga/UI)
+    private int vaoId;
 
     public void init() {
         String vertexShader = "#version 330 core\n" +
-                "layout (location=0) in vec3 position;\n" +
+                "layout (location = 0) in vec3 position;\n" +
                 "uniform mat4 projection;\n" +
                 "uniform mat4 view;\n" +
                 "uniform mat4 model;\n" +
-                "void main() { gl_Position = projection * view * model * vec4(position, 1.0); }";
+                "out vec2 texCoord;\n" +
+                "void main() {\n" +
+                "  gl_Position = projection * view * model * vec4(position, 1.0);\n" +
+                "  texCoord = position.xy * 0.5 + 0.5;\n" +
+                "}";
 
-        // Wewnątrz Renderer.java -> init()
         String fragmentShader = "#version 330 core\n" +
                 "uniform vec4 color;\n" +
+                "uniform sampler2D tex;\n" +
+                "uniform int useTexture;\n" +
+                "in vec2 texCoord;\n" +
                 "out vec4 fragColor;\n" +
-                // ZMIANA: Używamy color.a (alpha) wysłanego z Javy
-                "void main() { fragColor = vec4(color.rgb, color.a); }";
+                "void main() {\n" +
+                "  if(useTexture == 1) {\n" +
+                "    fragColor = texture(tex, vec2(texCoord.x, 1.0 - texCoord.y)) * color;\n" +
+                "  } else {\n" +
+                "    fragColor = color;\n" +
+                "  }\n" +
+                "}";
 
         shader = new Shader(vertexShader, fragmentShader);
 
-        // Tworzymy podstawowy kwadrat dla podłogi/UI, jeśli jeszcze go nie ma
         float[] vertices = {
                 -0.5f, 0.5f, 0.0f,  -0.5f, -0.5f, 0.0f,   0.5f, -0.5f, 0.0f,
                 0.5f, -0.5f, 0.0f,   0.5f, 0.5f, 0.0f,  -0.5f, 0.5f, 0.0f
@@ -309,9 +325,10 @@ public class Renderer {
         glBindVertexArray(0);
     }
 
-    // GŁÓWNA METODA RENDEROWANIA ŚWIATA 3D
     public void render(Camera camera, Mesh floorMesh, Mesh lineMesh, List<Car> cars) {
         shader.bind();
+        // KLUCZOWE: Wyłączamy tekstury dla świata 3D
+        shader.setUniform("useTexture", 0);
 
         Matrix4f projection = new Matrix4f();
         projection.setPerspective(70.0f, 1280.0f / 720.0f, 0.1f, 1000.0f);
@@ -333,7 +350,7 @@ public class Renderer {
         glEnableVertexAttribArray(0);
         glDrawArrays(GL_TRIANGLES, 0, floorMesh.getVertexCount());
 
-        // Linie parkingowe
+        // Linie
         shader.setUniform("color", 0.9f, 0.9f, 0.9f, 1.0f);
         glBindVertexArray(lineMesh.getVaoId());
         for (int i = 0; i < 11; i++) {
@@ -359,15 +376,14 @@ public class Renderer {
         shader.unbind();
     }
 
-    // METODA DO RYSOWANIA UI (NAPRAWIONA)
-    public void renderUIQuad(float x, float y, float width, float height, Vector3f color) {
+    public void renderUIQuad(float x, float y, float width, float height, Vector3f color, int useTexture) {
         shader.bind();
         Matrix4f identity = new Matrix4f();
         shader.setUniform("projection", identity);
         shader.setUniform("view", identity);
 
-        // Ustawiamy stałą przezroczystość 0.7f dla całego UI
         shader.setUniform("color", color.x, color.y, color.z, 0.7f);
+        shader.setUniform("useTexture", useTexture);
 
         Matrix4f model = new Matrix4f();
         model.translate(x, y, 0);
@@ -378,58 +394,35 @@ public class Renderer {
         glEnableVertexAttribArray(0);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glDisableVertexAttribArray(0);
+        glBindVertexArray(0);
+
+        // NAPRAWIONE: Dodano drugi argument (0), aby odpiąć teksturę
+        glBindTexture(GL_TEXTURE_2D, 0);
+        shader.unbind();
     }
 
-    public void renderCube(Camera camera, Mesh cubeMesh, Matrix4f modelMatrix, Vector3f color) {
-        shader.bind();
-
-        Matrix4f projection = new Matrix4f();
-        projection.setPerspective(70.0f, 1280.0f / 720.0f, 0.1f, 1000.0f);
-        shader.setUniform("projection", projection);
-
-        Matrix4f view = new Matrix4f();
-        view.rotateX(camera.getRotation().x);
-        view.rotateY(camera.getRotation().y);
-        view.translate(-camera.getPosition().x, -camera.getPosition().y, -camera.getPosition().z);
-        shader.setUniform("view", view);
-
-        shader.setUniform("model", modelMatrix);
-        shader.setUniform("color", color.x, color.y, color.z, 1.0f);
-
-        glBindVertexArray(cubeMesh.getVaoId());
-        glEnableVertexAttribArray(0);
-        glDrawArrays(GL_TRIANGLES, 0, cubeMesh.getVertexCount());
-        glDisableVertexAttribArray(0);
-    }
-
-    // Metoda do rysowania pojedynczych brył (np. ściany sklepu)
     public void renderMesh(Camera camera, Mesh mesh, Matrix4f modelMatrix, Vector3f color) {
         shader.bind();
+        shader.setUniform("useTexture", 0); // Wyłącz tekstury dla meshów (np. Lidl)
 
-        // 1. Ustawiamy perspektywę (taką samą jak dla aut)
         Matrix4f projection = new Matrix4f();
         projection.setPerspective(70.0f, 1280.0f / 720.0f, 0.1f, 1000.0f);
         shader.setUniform("projection", projection);
 
-        // 2. Ustawiamy widok kamery
         Matrix4f view = new Matrix4f();
         view.rotateX(camera.getRotation().x);
         view.rotateY(camera.getRotation().y);
         view.translate(-camera.getPosition().x, -camera.getPosition().y, -camera.getPosition().z);
         shader.setUniform("view", view);
 
-        // 3. Ustawiamy pozycję, skalę i kolor
         shader.setUniform("model", modelMatrix);
         shader.setUniform("color", color.x, color.y, color.z, 1.0f);
 
-        // 4. Rysujemy
         glBindVertexArray(mesh.getVaoId());
         glEnableVertexAttribArray(0);
         glDrawArrays(GL_TRIANGLES, 0, mesh.getVertexCount());
         glDisableVertexAttribArray(0);
         glBindVertexArray(0);
-
-        shader.unbind();
     }
 }
 ```
@@ -485,6 +478,14 @@ public class Shader {
     public void setUniform(String name, float r, float g, float b, float a) {
         int location = org.lwjgl.opengl.GL20.glGetUniformLocation(programId, name);
         org.lwjgl.opengl.GL20.glUniform4f(location, r, g, b, a);
+    }
+
+    // DODAJ TO TUTAJ - Metoda do przesyłania liczb całkowitych (0 lub 1)
+    public void setUniform(String name, int value) {
+        int location = org.lwjgl.opengl.GL20.glGetUniformLocation(programId, name);
+        if (location != -1) {
+            org.lwjgl.opengl.GL20.glUniform1i(location, value);
+        }
     }
 }
 ```
@@ -580,6 +581,59 @@ public class Window {
 }
 ```
 
+### Texture
+```java
+package engine;
+
+import static org.lwjgl.opengl.GL11.*;
+import java.nio.ByteBuffer;
+import java.awt.image.BufferedImage;
+import java.awt.Graphics2D;
+import java.awt.Color;
+import java.awt.Font;
+import org.lwjgl.BufferUtils;
+
+public class Texture {
+    private int id;
+
+    public Texture(String text) {
+        // Tworzymy obrazek w pamięci RAM (Java AWT)
+        BufferedImage img = new BufferedImage(800, 64, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON); // Wygładzanie
+        g.setFont(new Font("Arial", Font.BOLD, 30));
+        g.setColor(Color.WHITE);
+        g.drawString(text, 10, 45);
+        g.dispose();
+
+        // Zamieniamy obrazek na dane zrozumiałe dla karty graficznej
+        int[] pixels = new int[img.getWidth() * img.getHeight()];
+        img.getRGB(0, 0, img.getWidth(), img.getHeight(), pixels, 0, img.getWidth());
+        ByteBuffer buffer = BufferUtils.createByteBuffer(img.getWidth() * img.getHeight() * 4);
+
+        for(int y = 0; y < img.getHeight(); y++){
+            for(int x = 0; x < img.getWidth(); x++){
+                int pixel = pixels[y * img.getWidth() + x];
+                buffer.put((byte) ((pixel >> 16) & 0xFF));
+                buffer.put((byte) ((pixel >> 8) & 0xFF));
+                buffer.put((byte) (pixel & 0xFF));
+                buffer.put((byte) ((pixel >> 24) & 0xFF));
+            }
+        }
+        buffer.flip();
+
+        id = glGenTextures();
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.getWidth(), img.getHeight(), 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+
+    public void bind() { glBindTexture(GL_TEXTURE_2D, id); }
+    public void delete() { glDeleteTextures(id); }
+}
+```
+
 ## 🚗 Entities
 ### 🚘 Car
 ```java
@@ -593,6 +647,7 @@ public class Car {
     private Vector3f position;
     private Vector3f color;
     private Ticket ticket;
+    private boolean hasFine = false; // <-- DODAJ TO TUTAJ
 
     public Car(Mesh mesh, Vector3f position, Vector3f color, Ticket ticket) {
         this.mesh = mesh;
@@ -600,6 +655,16 @@ public class Car {
         this.color = color;
         this.ticket = ticket;
     }
+
+    // --- DODAJ TE DWIE METODY ---
+    public boolean hasFine() {
+        return hasFine;
+    }
+
+    public void setHasFine(boolean hasFine) {
+        this.hasFine = hasFine;
+    }
+    // ----------------------------
 
     public Mesh getMesh() { return mesh; }
     public Vector3f getPosition() { return position; }
@@ -671,32 +736,39 @@ public class Game {
     private int finesIssued = 0;
     private long lastInteractTime = 0;
 
-    public int getScore() { return score; }
-    public int getFinesIssued() { return finesIssued; }
+    private String uiMessage = "Witaj w pracy, kontrolerze!";
+    private long messageDisplayStartTime = 0;
+    private final long MESSAGE_DURATION = 3000;
+
+    // --- DODANE METODY GETTER (NAPRAWA BŁĘDU W GAMELOOP) ---
+    public int getScore() {
+        return score;
+    }
+
+    public int getFinesIssued() {
+        return finesIssued;
+    }
+
     public String getUiMessage() {
         if (System.currentTimeMillis() - messageDisplayStartTime > MESSAGE_DURATION) return "";
         return uiMessage;
     }
-
-    private String uiMessage = "Witaj w pracy, kontrolerze!";
-    private long messageDisplayStartTime = 0;
-    private final long MESSAGE_DURATION = 3000; // Wiadomość zniknie po 3 sekundach
+    // -------------------------------------------------------
 
     public Game() {
         player = new Player();
         renderer = new Renderer();
         renderer.init();
-
         hud = new HUD();
 
-        // Podłoga
+        // Model Podłogi
         float[] floorVertices = {
                 -0.5f, 0.0f, -0.5f,  -0.5f, 0.0f,  0.5f,   0.5f, 0.0f,  0.5f,
                 0.5f, 0.0f,  0.5f,   0.5f, 0.0f, -0.5f,  -0.5f, 0.0f, -0.5f
         };
         floorMesh = new Mesh(floorVertices);
 
-        // Model auta
+        // Model Sześcianu (Auta/Budynki)
         float[] cubeVertices = {
                 -0.5f, -0.5f,  0.5f,   0.5f, -0.5f,  0.5f,   0.5f,  0.5f,  0.5f,
                 0.5f,  0.5f,  0.5f,  -0.5f,  0.5f,  0.5f,  -0.5f, -0.5f,  0.5f,
@@ -713,7 +785,7 @@ public class Game {
         };
         carMesh = new Mesh(cubeVertices);
 
-        // Model białej linii parkingowej (bardzo płaski i wąski prostokąt)
+        // Model Linii
         float[] lineVertices = {
                 -0.05f, 0.01f, -2.0f,  -0.05f, 0.01f,  2.0f,   0.05f, 0.01f,  2.0f,
                 0.05f, 0.01f,  2.0f,   0.05f, 0.01f, -2.0f,  -0.05f, 0.01f, -2.0f
@@ -721,38 +793,15 @@ public class Game {
         lineMesh = new Mesh(lineVertices);
 
         cars = new ArrayList<>();
-        // Auto czerwone (bilet na 10s)
         cars.add(new Car(carMesh, new Vector3f(0.0f, -1.0f, -5.0f), new Vector3f(0.8f, 0.1f, 0.1f), new Ticket(10000)));
-        // Auto niebieskie (bilet na 60s)
         cars.add(new Car(carMesh, new Vector3f(-3.0f, -1.0f, -5.0f), new Vector3f(0.1f, 0.1f, 0.8f), new Ticket(60000)));
-        // Auto żółte (bilet na 120s)
         cars.add(new Car(carMesh, new Vector3f(3.0f, -1.0f, -5.0f), new Vector3f(0.8f, 0.8f, 0.1f), new Ticket(120000)));
     }
 
     public void update() {
         player.update();
-
-        // Klawisz E - Sprawdzanie biletu
-        if (Input.isKeyDown(GLFW_KEY_E)) {
-            handleInteraction(false);
-        }
-
-        // Klawisz F - Wystawianie mandatu
-        if (Input.isKeyDown(GLFW_KEY_F)) {
-            handleInteraction(true);
-        }
-
-        // Klawisz TAB - Statystyki
-        if (Input.isKeyDown(GLFW_KEY_TAB)) {
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastInteractTime > 500) {
-                System.out.println("\n=== STATYSTYKI PRACY ===");
-                System.out.println("Punkty: " + score);
-                System.out.println("Wystawione mandaty: " + finesIssued);
-                System.out.println("========================\n");
-                lastInteractTime = currentTime;
-            }
-        }
+        if (Input.isKeyDown(GLFW_KEY_E)) handleInteraction(false);
+        if (Input.isKeyDown(GLFW_KEY_F)) handleInteraction(true);
     }
 
     private void handleInteraction(boolean isIssuingFine) {
@@ -760,10 +809,11 @@ public class Game {
         if (currentTime - lastInteractTime > 500) {
             Car target = getClosestCar(2.5f);
             if (target != null) {
-                if (isIssuingFine) issueFine(target);
-                else checkTicket(target);
-            } else {
-                System.out.println("Za daleko od samochodu!");
+                if (isIssuingFine) {
+                    issueFine(target); // Wywołujemy poprawione issueFine
+                } else {
+                    checkTicket(target);
+                }
             }
             lastInteractTime = currentTime;
         }
@@ -772,20 +822,10 @@ public class Game {
     private Car getClosestCar(float maxDistance) {
         Car closest = null;
         float minDistance = maxDistance;
-
         for (Car car : cars) {
-            // Poprawiona matematyka dystansu
-            // W LWJGL pozycja kamery często jest odwrotnością pozycji w świecie
             float dx = player.getCamera().getPosition().x - car.getPosition().x;
             float dz = player.getCamera().getPosition().z - car.getPosition().z;
-
-            // Obliczamy dystans (bez Y, bo interesuje nas odległość na ziemi)
             float distance = (float) Math.sqrt(dx * dx + dz * dz);
-
-            // POMOCNICZE: Odkomentuj linię poniżej, jeśli nadal nie będzie działać,
-            // aby zobaczyć dystans w konsoli:
-            // System.out.println("Dystans do auta: " + distance);
-
             if (distance < minDistance) {
                 minDistance = distance;
                 closest = car;
@@ -795,17 +835,21 @@ public class Game {
     }
 
     private void checkTicket(Car car) {
-        if (car.getTicket().isExpired()) {
-            showUIMessage("BILET PRZETERMINOWANY! [F] - Mandat");
-        } else {
-            showUIMessage("Bilet ważny. Zostało: " + car.getTicket().getRemainingSeconds() + "s");
-        }
+        if (car.getTicket().isExpired()) showUIMessage("BILET PRZETERMINOWANY! [F] - Mandat");
+        else showUIMessage("Bilet ważny. Zostało: " + car.getTicket().getRemainingSeconds() + "s");
     }
 
     private void issueFine(Car car) {
+        // Blokada: jeśli auto ma już mandat, kończymy robotę
+        if (car.hasFine()) {
+            showUIMessage("TEN SAMOCHÓD MA JUŻ MANDAT!");
+            return;
+        }
+
         if (car.getTicket().isExpired()) {
             score += 10;
             finesIssued++;
+            car.setHasFine(true); // Oznaczamy auto jako "ukarane"
             showUIMessage("POPRAWNY MANDAT! +10 PKT");
         } else {
             score -= 15;
@@ -816,38 +860,34 @@ public class Game {
     private void showUIMessage(String msg) {
         this.uiMessage = msg;
         this.messageDisplayStartTime = System.currentTimeMillis();
-        System.out.println(msg); // Zostawiamy w konsoli dla pewności
+        System.out.println(msg);
     }
 
     public void render() {
-        // 1. Najpierw podłoga, linie i auta (to co już masz)
+        // 1. RYSOWANIE ŚWIATA (To co już masz)
         renderer.render(player.getCamera(), floorMesh, lineMesh, cars);
 
-        // 2. BUDYNEK LIDLA (Szara ściana z tyłu)
+        // LIDL
         Matrix4f lidlWall = new Matrix4f();
-        // Ustawiamy go za parkingiem (Z = -20) i podnosimy do góry (Y = 2.5)
         lidlWall.translate(0.0f, 2.5f, -20.0f);
-        // Robimy go bardzo szerokim (30m) i wysokim (8m)
         lidlWall.scale(30.0f, 8.0f, 1.0f);
-
-        // Rysujemy go używając carMesh (bo to po prostu sześcian)
         renderer.renderMesh(player.getCamera(), carMesh, lidlWall, new Vector3f(0.6f, 0.6f, 0.6f));
 
-        // 3. HUD (prostokąt na końcu, żeby był na wierzchu)
-        // Wewnątrz metody render() w Game.java
-
-// 1. Najpierw wyliczamy tekst o bilecie
-        String ticketStatus = "";
-        Car closest = getClosestCar(2.5f); // Korzystamy z Twojej metody odległości
+        // 2. OBLICZENIA DLA HUD-a (Naprawa błędu cannot find symbol)
+        String ticketStatus = "BRAK"; // <--- TUTAJ JEST TA DEKLARACJA
+        entities.Car closest = getClosestCar(2.5f);
         if (closest != null) {
             ticketStatus = closest.getTicket().getRemainingSeconds() + "s";
         }
 
-// 2. Wyłączamy test głębi, żeby interfejs był na wierzchu
+        // Pobieramy komunikat (ten na środek ekranu)
+        String currentMsg = getUiMessage();
+
+        // 3. RYSOWANIE HUD (Zawsze na końcu)
         org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
 
-// 3. POPRAWIONE WYWOŁANIE: Przekazujemy renderer, score, finesIssued i ticketStatus
-        hud.drawHUD(renderer, score, finesIssued, ticketStatus);
+        // Przekazujemy wszystkie 5 argumentów: renderer, score, finesIssued, ticketStatus, currentMsg
+        hud.drawHUD(renderer, score, finesIssued, ticketStatus, currentMsg);
 
         org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
     }
@@ -940,56 +980,55 @@ public class Player {
 package ui;
 
 import engine.Renderer;
+import engine.Texture;
 import utils.Vector3f;
 
 public class HUD {
-    // Rozmiar piksela napisu - jeśli będzie za mały, zwiększ go do 0.012f
-    private float p = 0.01f;
+    private Texture lastHudTexture;
+    private String lastHudText = "";
 
-    public void drawHUD(Renderer renderer, int score, int fines, String ticketInfo) {
-        // 1. TŁO - Twój niebieski prostokąt
-        renderer.renderUIQuad(-0.75f, 0.9f, 0.45f, 0.15f, new Vector3f(0.0f, 0.3f, 0.7f));
+    private Texture messageTexture;
+    private String lastMessageText = "";
 
-        // 2. CELOWNIK
-        renderer.renderUIQuad(0, 0, 0.005f, 0.01f, new Vector3f(1, 1, 1));
+    public void drawHUD(Renderer renderer, int score, int fines, String ticketInfo, String uiMessage) {
+        // --- 1. STAŁY PANEL (Górny Lewy Róg) ---
+        // Rysujemy tło (0 - bez tekstury)
+        renderer.renderUIQuad(-0.75f, 0.9f, 0.45f, 0.15f, new Vector3f(0.0f, 0.3f, 0.7f), 0);
 
-        // 3. TEKST: Punkty (P) i Mandaty (M)
-        // Rysujemy "P" i wynik
-        drawText(renderer, "P " + score, -0.95f, 0.94f);
-        // Rysujemy "M" i mandaty
-        drawText(renderer, "M " + fines, -0.95f, 0.88f);
-        // Rysujemy info o bilecie (skrócone)
-        drawText(renderer, "T " + ticketInfo, -0.95f, 0.82f);
-    }
+        String hudText = "PKT: " + score + " | BILET: " + ticketInfo;
 
-    private void drawText(Renderer renderer, String text, float x, float y) {
-        float curX = x;
-        for (char c : text.toUpperCase().toCharArray()) {
-            drawChar(renderer, c, curX, y);
-            curX += p * 5; // Odstęp między literami
+        // Odświeżamy obrazek napisu tylko gdy tekst się zmieni (żeby gra nie mulila)
+        if (!hudText.equals(lastHudText)) {
+            if (lastHudTexture != null) lastHudTexture.delete();
+            lastHudTexture = new Texture(hudText);
+            lastHudText = hudText;
         }
-    }
 
-    private void drawChar(Renderer renderer, char c, float x, float y) {
-        Vector3f white = new Vector3f(1, 1, 1);
-        if (c == 'P') {
-            bit(renderer, x, y, 1, 5, white); bit(renderer, x, y, 3, 1, white);
-            bit(renderer, x+p*2, y-p, 1, 2, white); bit(renderer, x, y-p*2, 3, 1, white);
-        } else if (c == 'M') {
-            bit(renderer, x, y, 1, 5, white); bit(renderer, x+p*4, y, 1, 5, white);
-            bit(renderer, x+p, y, 1, 1, white); bit(renderer, x+p*2, y-p, 1, 1, white); bit(renderer, x+p*3, y, 1, 1, white);
-        } else if (c == 'T') { // Skrót od Ticket (Bilet)
-            bit(renderer, x, y, 3, 1, white); bit(renderer, x+p, y, 1, 5, white);
-        } else if (c >= '0' && c <= '9') {
-            // Prosty sześcian jako reprezentacja cyfry (żeby nie pisać matrycy dla każdej)
-            bit(renderer, x, y-p, 3, 3, white);
-        } else if (c == ' ') {
-            // Spacja
+        // Naklejamy napis na prostokąt (1 - z teksturą)
+        if (lastHudTexture != null) {
+            lastHudTexture.bind();
+            renderer.renderUIQuad(-0.72f, 0.88f, 0.4f, 0.06f, new Vector3f(1, 1, 1), 1);
+            org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0); // Odepnij zaraz po użyciu!
         }
-    }
 
-    private void bit(Renderer renderer, float x, float y, int w, int h, Vector3f col) {
-        renderer.renderUIQuad(x + (w*p/2f), y - (h*p/2f), w * p, h * p, col);
+        // --- 2. KOMUNIKAT NA ŚRODKU (Dynamiczny) ---
+        // Rysujemy tylko jeśli istnieje komunikat!
+        if (uiMessage != null && !uiMessage.trim().isEmpty()) {
+            if (!uiMessage.equals(lastMessageText)) {
+                if (messageTexture != null) messageTexture.delete();
+                messageTexture = new Texture(uiMessage);
+                lastMessageText = uiMessage;
+            }
+            if (messageTexture != null) {
+                messageTexture.bind();
+                // X: 0.0f, szerokość: DUŻA (1.2f), żeby wszedł cały napis
+                renderer.renderUIQuad(0.0f, -0.2f, 1.2f, 0.12f, new Vector3f(1, 1, 1), 1);
+                org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0); // Odepnij!
+            }
+        }
+
+        // --- 3. CELOWNIK ---
+        renderer.renderUIQuad(0, 0, 0.01f, 0.01f, new Vector3f(1, 1, 1), 0);
     }
 }
 ```
