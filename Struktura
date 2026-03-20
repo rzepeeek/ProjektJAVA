@@ -1,32 +1,35 @@
 # CWL SIMULATOR
 
 📂 ## Struktura projektu
+```text
 src/
  |── engine/
-    |── Camera
-    |── GameLoop
-    |── Input
-    |── Mesh
-    |── Renderer
-    |── Shader
-    |── Window
+ |   |── Camera
+ |   |── GameLoop
+ |   |── Input
+ |   |── Mesh
+ |   |── Renderer
+ |   |── Shader
+ |   |── Window
  |── entities/
-    |── Car
-    |── Ticket
+ |   |── Car
+ |   |── Ticket
  |── game/
-    |── Game
-    |── Player
+ |   |── Game
+ |   |── Player
  |── input/
  |── ui/
-    |── HUD
+ |   |── HUD
  |── utils/
-    |── Matrix4f
-    |── Vector3f
+ |   |── Matrix4f
+ |   |── Vector3f
  |── Main.java
+```
 
 ⚙️ ## Engine
 ### Camera:
-```package engine;
+```java
+package engine;
 
 // ZMIENIONO IMPORT: Teraz używamy naszej własnej klasy z pakietu utils!
 import utils.Vector3f;
@@ -79,7 +82,8 @@ public class Camera {
 ```
 
 ### GameLoop:
-```package engine;
+```java
+package engine;
 
 // import game.Game; // Zakładamy, że ta klasa powstanie wkrótce
 
