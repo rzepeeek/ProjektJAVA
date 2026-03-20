@@ -1,6 +1,6 @@
 # CWL SIMULATOR
 
-📂 ## Struktura projektu
+## 📂 Struktura projektu
 ```text
 src/
  |── engine/
@@ -26,7 +26,7 @@ src/
  |── Main.java
 ```
 
-⚙️ ## Engine
+## ⚙️ Engine
 ### Camera:
 ```java
 package engine;
