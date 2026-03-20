@@ -1,6 +1,6 @@
 # CWL SIMULATOR
 
-📂## Struktura projektu
+📂 ## Struktura projektu
 src/
  |── engine/
     |── Camera
@@ -24,8 +24,8 @@ src/
     |── Vector3f
  |── Main.java
 
-⚙️## Engine
-###Camera:
+⚙️ ## Engine
+### Camera:
 ```package engine;
 
 // ZMIENIONO IMPORT: Teraz używamy naszej własnej klasy z pakietu utils!
@@ -75,9 +75,10 @@ public class Camera {
     public Vector3f getRotation() {
         return rotation;
     }
-}```
+}
+```
 
-###GameLoop:
+### GameLoop:
 ```package engine;
 
 // import game.Game; // Zakładamy, że ta klasa powstanie wkrótce
@@ -156,4 +157,5 @@ public class GameLoop {
         window.cleanup();
     }
 
-}```
+}
+```
