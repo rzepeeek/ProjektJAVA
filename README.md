@@ -1161,4 +1161,4 @@ public class Main {
 ```
 
 ## 📄 License
-MIT
+[Licencja](LICENSE.md)
