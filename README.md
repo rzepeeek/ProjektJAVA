@@ -1,4 +1,12 @@
-# CWL SIMULATOR
+# 🚀 CWL SIMULATOR
+
+## 📌 Opis projektu
+```text
+Projekt semestralny z przedmiotu **Programowanie Obiektowe II**.
+Autorzy: **Adrian Czarnota 21442, Dawid Rzepka 21299**.
+Data rozpoczęcia: *11.03.2026*.
+Repozytorium zawiera kod oraz dokumentację projektu.
+```
 
 ## 📂 Struktura projektu
 ```text
@@ -11,7 +19,7 @@ src/
  |   |── 🖥️ Renderer
  |   |── 🎨 Shader
  |   |── 🪟 Window
- |   |── Texture
+ |   |── 🧵 Texture
  |── 🚗 entities/
  |   |── 🚘 Car
  |   |── 🎫 Ticket
@@ -581,7 +589,7 @@ public class Window {
 }
 ```
 
-### Texture
+### 🧵 Texture
 ```java
 package engine;
 
